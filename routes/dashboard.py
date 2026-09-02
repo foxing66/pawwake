@@ -380,6 +380,7 @@ async def save_settings(request: Request):
                     os.environ[key] = ""
                     updated.append(key)
                     continue
+                value = str_val
 
             # --- systemPrompt 特殊处理 ---
             if key == "systemPrompt":
@@ -400,7 +401,10 @@ async def save_settings(request: Request):
                     import memory_extractor as _me_mod
                     _me_mod.MEMORY_API_KEY = str(value)
                 updated.append(key)
-                print(f"[settings] {key} = {typed_value}")
+                if key in _MASKED_KEYS:
+                    print(f"[settings] {key} 已更新")
+                else:
+                    print(f"[settings] {key} = {typed_value}")
 
             elif key in _ENV_ONLY:
                 typed_value = _ENV_ONLY[key](value)
