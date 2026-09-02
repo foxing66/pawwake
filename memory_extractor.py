@@ -12,6 +12,8 @@ import json
 import httpx
 from typing import List, Dict
 
+import shared
+
 API_KEY = os.getenv("API_KEY", "")
 API_BASE_URL = os.getenv("API_BASE_URL", "https://openrouter.ai/api/v1/chat/completions")
 
@@ -161,15 +163,18 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
 
     # 调用 LLM 提取记忆
     try:
+        headers = {
+            "Authorization": f"Bearer {get_memory_api_key()}",
+            "Content-Type": "application/json",
+        }
+        if "openrouter" in API_BASE_URL:
+            headers["HTTP-Referer"] = shared.EXTRA_REFERER
+            headers["X-Title"] = shared.EXTRA_TITLE
+
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 API_BASE_URL,
-                headers={
-                    "Authorization": f"Bearer {get_memory_api_key()}",
-                    "Content-Type": "application/json",
-                    "HTTP-Referer": "https://midsummer-gateway.local",
-                    "X-Title": "Midsummer Memory Extraction",
-                },
+                headers=headers,
                 json={
                     "model": MEMORY_MODEL,
                     "max_tokens": MEMORY_MAX_TOKENS,
