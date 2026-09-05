@@ -331,7 +331,7 @@ async def _chat_completions_inner(request: Request):
         body["reasoning_effort"] = shared.REASONING_EFFORT
         print(f"🧠 注入推理参数: reasoning_effort={shared.REASONING_EFFORT}")
 
-     print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
+    print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
 
     # ---------- 清理 messages 中的额外字段（DeepSeek 不接受 tool_calls/tool_call_id/content_type） ----------
     def clean_messages(messages):
