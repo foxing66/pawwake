@@ -391,7 +391,7 @@ async def _chat_completions_inner(request: Request):
             # ---------- 最终清理结束 ----------
 
             print(f"🔗 实际请求 URL: {shared.API_BASE_URL}", flush=True)
-            response = await client.post(shared.API_BASE_URL, headers=headers, json=body)
+            response = await client.post(shared.API_BASE_URL + "/chat/completions", headers=headers, json=body)
 
             if response.status_code == 200:
                 resp_data = response.json()
