@@ -390,6 +390,7 @@ async def _chat_completions_inner(request: Request):
                 print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
             # ---------- 最终清理结束 ----------
 
+            print(f"🔗 实际请求 URL: {shared.API_BASE_URL}", flush=True)
             response = await client.post(shared.API_BASE_URL, headers=headers, json=body)
 
             if response.status_code == 200:
