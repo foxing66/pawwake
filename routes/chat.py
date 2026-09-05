@@ -375,7 +375,25 @@ async def _chat_completions_inner(request: Request):
             headers={"Cache-Control": "no-cache", "Connection": "keep-alive"},
         )
     else:
-        async with httpx.AsyncClient(timeout=300) as client:
+    async with httpx.AsyncClient(timeout=300) as client:
+        # ---------- 最终清理：发送前再过滤一次，确保没有额外字段 ----------
+        if "messages" in body:
+            cleaned = []
+            for msg in body["messages"]:
+                cleaned_msg = {}
+                if "role" in msg:
+                    cleaned_msg["role"] = msg["role"]
+                if "content" in msg:
+                    cleaned_msg["content"] = msg["content"]
+                cleaned.append(cleaned_msg)
+            body["messages"] = cleaned
+            print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
+        # ---------- 最终清理结束 ----------
+
+        response = await client.post(shared.API_BASE_URL, headers=headers, json=body)
+
+        if response.status_code == 200:
+            ...
             response = await client.post(shared.API_BASE_URL, headers=headers, json=body)
 
             if response.status_code == 200:
