@@ -331,7 +331,25 @@ async def _chat_completions_inner(request: Request):
         body["reasoning_effort"] = shared.REASONING_EFFORT
         print(f"🧠 注入推理参数: reasoning_effort={shared.REASONING_EFFORT}")
 
-    print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
+     print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
+
+    # ---------- 清理 messages 中的额外字段（DeepSeek 不接受 tool_calls/tool_call_id/content_type） ----------
+    def clean_messages(messages):
+        cleaned = []
+        for msg in messages:
+            cleaned_msg = {}
+            if "role" in msg:
+                cleaned_msg["role"] = msg["role"]
+            if "content" in msg:
+                cleaned_msg["content"] = msg["content"]
+            cleaned.append(cleaned_msg)
+        return cleaned
+
+    if "messages" in body:
+        original_len = len(body["messages"])
+        body["messages"] = clean_messages(body["messages"])
+        print(f"🧹 清理了 messages 中的额外字段 (共 {original_len} 条)", flush=True)
+    # ---------- 清理结束 ----------
 
     # 调试：打印请求体中的推理相关字段
     debug_keys = {k: v for k, v in body.items() if k in ('reasoning_effort', 'google', 'reasoning')}
