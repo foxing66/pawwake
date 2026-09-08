@@ -198,6 +198,13 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
         async with httpx.AsyncClient(timeout=60) as client:
             # 打印实际请求的 URL，用于排查 404
             print(f"📡 摘要请求 URL: {shared.API_BASE_URL}", flush=True)
+            # 打印实际请求体，用于排查 404
+            import json
+            print(f"📡 摘要请求体: {json.dumps({
+                "model": shared.CACHE_SUMMARY_MODEL,
+                "max_tokens": shared.CACHE_SUMMARY_MAX_TOKENS,
+                "messages": [{"role": "user", "content": prompt}],
+            }, ensure_ascii=False)[:500]}", flush=True)
 
             response = await client.post(shared.API_BASE_URL, headers=headers, json={
                 "model": shared.CACHE_SUMMARY_MODEL,
