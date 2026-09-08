@@ -196,6 +196,9 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
             headers["X-Title"] = shared.EXTRA_TITLE
 
         async with httpx.AsyncClient(timeout=60) as client:
+            # 打印实际请求的 URL，用于排查 404
+            print(f"📡 摘要请求 URL: {shared.API_BASE_URL}", flush=True)
+
             response = await client.post(shared.API_BASE_URL, headers=headers, json={
                 "model": shared.CACHE_SUMMARY_MODEL,
                 # 推理模型的思考也消耗max_tokens，给足空间避免content为空
