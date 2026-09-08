@@ -200,18 +200,18 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
             print(f"📡 摘要请求 URL: {shared.API_BASE_URL}", flush=True)
             # 打印实际请求体，用于排查 404
             import json
-            print(f"📡 摘要请求体: {json.dumps({
+            # 构造请求体
+            payload = {
                 "model": shared.CACHE_SUMMARY_MODEL,
                 "max_tokens": shared.CACHE_SUMMARY_MAX_TOKENS,
-                "messages": [{"role": "user", "content": prompt}],
-            }, ensure_ascii=False)[:500]}", flush=True)
+                "messages": [
+                    {"role": "system", "content": "你是一个专业的对话摘要助手。"},
+                    {"role": "user", "content": prompt}
+                ],
+            }
+            print(f"📡 摘要请求体: {json.dumps(payload, ensure_ascii=False)[:500]}", flush=True)
 
-            response = await client.post(shared.API_BASE_URL, headers=headers, json={
-                "model": shared.CACHE_SUMMARY_MODEL,
-                # 推理模型的思考也消耗max_tokens，给足空间避免content为空
-                "max_tokens": shared.CACHE_SUMMARY_MAX_TOKENS,
-                "messages": [{"role": "user", "content": prompt}],
-            })
+            response = await client.post(shared.API_BASE_URL, headers=headers, json=payload)
             if response.status_code == 200:
                 data = response.json()
                 if "choices" in data:
@@ -224,7 +224,6 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
                     if summary:
                         print(f"📝 摘要生成完成: {len(summary)}字 (压缩{len(messages)}条消息)")
                         return summary
-
                     # 空content分不清是额度被思考吃光还是模型没给答案，把上游的判据一起打出来
                     finish_reason = choice.get("finish_reason")
                     usage = data.get("usage") or {}
