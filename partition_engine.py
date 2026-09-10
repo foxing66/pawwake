@@ -211,7 +211,7 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
             }
             print(f"📡 摘要请求体: {json.dumps(payload, ensure_ascii=False)[:500]}", flush=True)
 
-            response = await client.post(shared.API_BASE_URL, headers=headers, json=payload)
+            response = await client.post(f"{shared.API_BASE_URL}/chat/completions", headers=headers, json=payload)
             if response.status_code == 200:
                 data = response.json()
                 if "choices" in data:
