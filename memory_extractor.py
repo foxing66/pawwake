@@ -171,9 +171,9 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
             headers["HTTP-Referer"] = shared.EXTRA_REFERER
             headers["X-Title"] = shared.EXTRA_TITLE
 
-        async with httpx.AsyncClient(timeout=60) as client:
+async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
-                API_BASE_URL,
+                f"{API_BASE_URL}/chat/completions",
                 headers=headers,
                 json={
                     "model": MEMORY_MODEL,
@@ -188,7 +188,6 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
             if response.status_code != 200:
                 print(f"⚠️  记忆提取请求失败: {response.status_code}, model={MEMORY_MODEL}: {response.text[:500]}")
                 return []
-
             data = response.json()
             choice = (data.get("choices") or [{}])[0]
             text = (choice.get("message") or {}).get("content") or ""
