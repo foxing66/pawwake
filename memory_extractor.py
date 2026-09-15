@@ -162,7 +162,7 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
     prompt = EXTRACTION_PROMPT.format(existing_memories=memories_text)
 
     # 调用 LLM 提取记忆
-try:
+    try:
         headers = {
             "Authorization": f"Bearer {get_memory_api_key()}",
             "Content-Type": "application/json",
@@ -173,7 +173,7 @@ try:
 
         async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
-                f"{API_BASE_URL}/chat/completions",
+                API_BASE_URL,
                 headers=headers,
                 json={
                     "model": MEMORY_MODEL,
@@ -188,6 +188,7 @@ try:
             if response.status_code != 200:
                 print(f"⚠️  记忆提取请求失败: {response.status_code}, model={MEMORY_MODEL}: {response.text[:500]}")
                 return []
+
             data = response.json()
             choice = (data.get("choices") or [{}])[0]
             text = (choice.get("message") or {}).get("content") or ""
