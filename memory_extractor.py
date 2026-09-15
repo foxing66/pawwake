@@ -162,7 +162,7 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
     prompt = EXTRACTION_PROMPT.format(existing_memories=memories_text)
 
     # 调用 LLM 提取记忆
-    try:
+try:
         headers = {
             "Authorization": f"Bearer {get_memory_api_key()}",
             "Content-Type": "application/json",
@@ -171,7 +171,7 @@ async def extract_memories(messages: List[Dict[str, str]], existing_memories: Li
             headers["HTTP-Referer"] = shared.EXTRA_REFERER
             headers["X-Title"] = shared.EXTRA_TITLE
 
-async with httpx.AsyncClient(timeout=60) as client:
+        async with httpx.AsyncClient(timeout=60) as client:
             response = await client.post(
                 f"{API_BASE_URL}/chat/completions",
                 headers=headers,
