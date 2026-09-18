@@ -402,6 +402,12 @@ async def _chat_completions_inner(request: Request):
                 print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
             # ---------- 最终清理结束 ----------
 
+            # ---------- 调试：打印图片消息 ----------
+            for m in body.get("messages", []):
+                if isinstance(m.get("content"), list):
+                    print(f"🖼️ 图片消息: {json.dumps(m['content'], ensure_ascii=False)[:2000]}", flush=True)
+            # ---------- 调试结束 ----------
+
             print(f"🔗 实际请求 URL: {shared.API_BASE_URL}", flush=True)
             response = await client.post(shared.API_BASE_URL + "/chat/completions", headers=headers, json=body)
 
