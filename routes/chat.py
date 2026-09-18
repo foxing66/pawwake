@@ -489,13 +489,7 @@ async def stream_and_capture(
     stream_succeeded = False
 
     async with httpx.AsyncClient(timeout=300) as client:
-        # ---------- 调试：打印流式请求里的图片消息 ----------
-        for m in body.get("messages", []):
-            if isinstance(m.get("content"), list):
-                print(f"🖼️ 流式图片消息: {json.dumps(m['content'], ensure_ascii=False)[:2000]}", flush=True)
-        # ---------- 调试结束 ----------
-
-        async with client.stream("POST", shared.API_BASE_URL, headers=headers, json=body) as response:
+        async with client.stream("POST", shared.API_BASE_URL + "/chat/completions", headers=headers, json=body) as response:
             # 打印上游响应头（排查thinking问题用）
             upstream_ct = response.headers.get("content-type", "")
             print(f"📨 上游响应: status={response.status_code}, content-type={upstream_ct}", flush=True)
