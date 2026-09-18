@@ -24,7 +24,7 @@ def _is_anthropic_model(model: str) -> bool:
 def _strip_cache_control(messages: list):
     """
     剥掉消息中的 cache_control 字段，非 Claude 模型用不了。
-    如果 content 数组只剩纯文本 block，降级回字符串格式。
+    如果 content 数组里没有 image_url 块，把所有 text 块拼接回字符串格式。
     """
     stripped = 0
     for msg in messages:
@@ -35,8 +35,18 @@ def _strip_cache_control(messages: list):
             if isinstance(block, dict) and "cache_control" in block:
                 del block["cache_control"]
                 stripped += 1
-        if len(content) == 1 and isinstance(content[0], dict) and content[0].get("type") == "text":
-            msg["content"] = content[0]["text"]
+        # 数组里没有 image_url（即纯文本数组），降级回字符串
+        has_image = any(
+            isinstance(b, dict) and b.get("type") == "image_url"
+            for b in content
+        )
+        if not has_image:
+            text_joined = "\n\n".join(
+                b.get("text", "") for b in content
+                if isinstance(b, dict) and b.get("type") == "text"
+            )
+            if text_joined:
+                msg["content"] = text_joined
     if stripped > 0:
         print(f"🔧 兼容性处理: 剥离了 {stripped} 个 cache_control 字段（非 Claude 模型）")
 
