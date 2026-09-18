@@ -35,7 +35,6 @@ def _strip_cache_control(messages: list):
             if isinstance(block, dict) and "cache_control" in block:
                 del block["cache_control"]
                 stripped += 1
-        # 数组里没有 image_url（即纯文本数组），降级回字符串
         has_image = any(
             isinstance(b, dict) and b.get("type") == "image_url"
             for b in content
@@ -58,7 +57,6 @@ def _assemble_current_user_message(parts: list, raw_content) -> dict:
     必须把文字块和图片块都保留，不能只留图片。
     """
     if isinstance(raw_content, list):
-        # 客户端原始消息里的所有块
         media_blocks = [
             b for b in raw_content
             if not (isinstance(b, dict) and b.get("type") == "text")
@@ -68,14 +66,11 @@ def _assemble_current_user_message(parts: list, raw_content) -> dict:
             if isinstance(b, dict) and b.get("type") == "text"
         )
         if media_blocks:
-            # 注入文本（时间/记忆）+ 客户端原始文字，合并成一段 text 块
             merged = "\n\n".join(parts + ([text_joined] if text_joined else []))
-            # 保留客户端的图片块，并补上文字块
             return {
                 "role": "user",
                 "content": media_blocks + [{"type": "text", "text": merged}]
             }
-        # 没有图片块，纯文字，走下面字符串路径
         raw_content = text_joined
     parts.append(raw_content)
     return {"role": "user", "content": "\n\n".join(parts)}
@@ -96,11 +91,7 @@ def _message_text(message: dict) -> str:
 
 
 def _extract_client_system_text(messages: list) -> str:
-    """提取客户端自带的 system 消息文本（兼容字符串与多模态数组格式）。
-
-    部分客户端（如 rikkahub 及其二改版）把工具列表和使用指引写在 system prompt 里，
-    分区模式重建 messages 时若直接丢弃，会导致模型"不知道有什么工具"。
-    """
+    """提取客户端自带的 system 消息文本（兼容字符串与多模态数组格式）。"""
     parts = []
     for message in messages:
         if message.get("role") != "system":
@@ -254,10 +245,7 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
 
 
 def group_by_rounds(history: list) -> list:
-    """
-    按逻辑轮分组：每个user消息开始一轮，到下一个user前结束。
-    一轮可能包含: [user, assistant] 或 [user, assistant(tool_calls), tool, assistant] 等。
-    """
+    """按逻辑轮分组：每个user消息开始一轮，到下一个user前结束。"""
     rounds = []
     current_round = []
     for msg in history:
@@ -292,9 +280,7 @@ def _build_memory_extraction_messages(
 
 
 def _should_rotate(b_rounds_count: int, X: int, a_msgs: list) -> bool:
-    """
-    判断是否应该触发A区→摘要的轮转。
-    """
+    """判断是否应该触发A区→摘要的轮转。"""
     if b_rounds_count == 0:
         return False
 
@@ -317,15 +303,11 @@ def _should_rotate(b_rounds_count: int, X: int, a_msgs: list) -> bool:
 
     return b_rounds_count >= X
 
-# 时间窗口模式下单次请求最大轮转次数（防止一口气压完所有历史）
 CACHE_MAX_ROTATIONS = int(os.getenv("CACHE_MAX_ROTATIONS", "2"))
 
 
 def _apply_breakpoint(msg: dict) -> bool:
-    """
-    给消息打上 cache_control breakpoint。
-    支持 content 为 str 或 list（多模态block数组）两种格式。
-    """
+    """给消息打上 cache_control breakpoint。"""
     content = msg.get('content')
 
     if isinstance(content, str) and content.strip():
@@ -350,9 +332,7 @@ async def build_partitioned_messages(
     conversation_recall_text: str = "",
     memory_text_builder=None,
 ) -> list:
-    """
-    分区缓存模式：构建带breakpoint的messages数组。
-    """
+    """分区缓存模式：构建带breakpoint的messages数组。"""
     X = shared.CACHE_PARTITION_X
 
     non_system = [m for m in all_messages if m.get('role') != 'system']
@@ -361,6 +341,9 @@ async def build_partitioned_messages(
     history = non_system[:]
     if history and history[-1].get('role') == 'user':
         current_user_msg = history.pop()
+
+    if current_user_msg:
+        print(f"🖼️ current_user_msg 原始内容: {json.dumps(current_user_msg.get('content'), ensure_ascii=False)[:2000]}", flush=True)
 
     # 清洗孤立的tool消息
     cleaned = []
