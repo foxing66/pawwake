@@ -54,10 +54,11 @@ def _strip_cache_control(messages: list):
 def _assemble_current_user_message(parts: list, raw_content) -> dict:
     """
     组装当前轮 user 消息：注入文本（时间/记忆，parts）+ 客户端原始 content。
-    content 为多模态数组时保留图片等非文本块，只把文本块并进注入文本，
-    否则 image_url 块会在拼接时被丢弃，模型永远看不到图。
+    关键：如果客户端原始 content 是多模态数组（文字+图片），
+    必须把文字块和图片块都保留，不能只留图片。
     """
     if isinstance(raw_content, list):
+        # 客户端原始消息里的所有块
         media_blocks = [
             b for b in raw_content
             if not (isinstance(b, dict) and b.get("type") == "text")
@@ -67,8 +68,14 @@ def _assemble_current_user_message(parts: list, raw_content) -> dict:
             if isinstance(b, dict) and b.get("type") == "text"
         )
         if media_blocks:
+            # 注入文本（时间/记忆）+ 客户端原始文字，合并成一段 text 块
             merged = "\n\n".join(parts + ([text_joined] if text_joined else []))
-            return {"role": "user", "content": media_blocks + [{"type": "text", "text": merged}]}
+            # 保留客户端的图片块，并补上文字块
+            return {
+                "role": "user",
+                "content": media_blocks + [{"type": "text", "text": merged}]
+            }
+        # 没有图片块，纯文字，走下面字符串路径
         raw_content = text_joined
     parts.append(raw_content)
     return {"role": "user", "content": "\n\n".join(parts)}
@@ -125,8 +132,6 @@ def _is_title_generation_request(messages: list) -> bool:
     if any(signature in text for signature in strong_signatures):
         return True
 
-    # Some clients localize or slightly rewrite the boilerplate. Requiring three
-    # independent markers avoids treating an ordinary title request as metadata.
     marker_groups = (
         ("<content>", "</content>"),
         ("reply directly with the title", "only output the title", "只输出标题", "直接输出标题"),
@@ -140,10 +145,6 @@ def _is_title_generation_request(messages: list) -> bool:
     return matched_groups >= 3
 
 
-# 分区缓存模式下拼接到 system prompt 尾部的记忆使用说明。
-# 非缓存模式的对应说明在 build_system_prompt_with_memories 里（记忆和说明都在 system）；
-# 分区缓存模式记忆走 user 消息注入（<retrieved_memories> 块），这里只补静态说明，
-# 内容固定所以不破坏 system 缓存。
 MEMORY_USAGE_GUIDE = """
 
 # 记忆应用
@@ -196,7 +197,6 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
 摘要："""
 
     try:
-        # 摘要请求发往主API_BASE_URL，直接用主API_KEY（MEMORY_API_KEY可能是其他提供商的key）
         headers = {
             "Authorization": f"Bearer {shared.API_KEY}",
             "Content-Type": "application/json",
@@ -206,11 +206,6 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
             headers["X-Title"] = shared.EXTRA_TITLE
 
         async with httpx.AsyncClient(timeout=60) as client:
-            # 打印实际请求的 URL，用于排查 404
-            print(f"📡 摘要请求 URL: {shared.API_BASE_URL}", flush=True)
-            # 打印实际请求体，用于排查 404
-            import json
-            # 构造请求体
             payload = {
                 "model": shared.CACHE_SUMMARY_MODEL,
                 "max_tokens": shared.CACHE_SUMMARY_MAX_TOKENS,
@@ -219,14 +214,11 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
                     {"role": "user", "content": prompt}
                 ],
             }
-            print(f"📡 摘要请求体: {json.dumps(payload, ensure_ascii=False)[:500]}", flush=True)
 
             response = await client.post(f"{shared.API_BASE_URL}/chat/completions", headers=headers, json=payload)
             if response.status_code == 200:
                 data = response.json()
                 if "choices" in data:
-                    # 推理模型偶发返回content为None（思考吃光token或只返回reasoning_content）
-                    # 空列表和缺字段都得接住：这条路走下去就是异常日志，它自己不能再抛
                     choice = (data.get("choices") or [{}])[0]
                     message = choice.get("message") or {}
                     content = message.get("content") or ""
@@ -234,7 +226,6 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
                     if summary:
                         print(f"📝 摘要生成完成: {len(summary)}字 (压缩{len(messages)}条消息)")
                         return summary
-                    # 空content分不清是额度被思考吃光还是模型没给答案，把上游的判据一起打出来
                     finish_reason = choice.get("finish_reason")
                     usage = data.get("usage") or {}
                     completion_tokens = usage.get("completion_tokens")
@@ -243,7 +234,6 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
                         f"，completion_tokens={completion_tokens}/{shared.CACHE_SUMMARY_MAX_TOKENS}"
                         if completion_tokens is not None else "，usage 未提供"
                     )
-                    # 推理 0 是上游给的答案，不是没给。用 or 判断会把它退化成拿字符数瞎猜
                     if reasoning_tokens is not None:
                         usage_part += f"（其中推理 {reasoning_tokens}）"
                     else:
@@ -304,9 +294,6 @@ def _build_memory_extraction_messages(
 def _should_rotate(b_rounds_count: int, X: int, a_msgs: list) -> bool:
     """
     判断是否应该触发A区→摘要的轮转。
-
-    rounds模式（默认）：B区轮数 >= X 时触发
-    time模式：A区最早消息距今 >= 时间窗口 时触发（短时间内大量消息不频繁摘要）
     """
     if b_rounds_count == 0:
         return False
@@ -338,18 +325,14 @@ def _apply_breakpoint(msg: dict) -> bool:
     """
     给消息打上 cache_control breakpoint。
     支持 content 为 str 或 list（多模态block数组）两种格式。
-    返回 True 表示成功打上，False 表示无法打（比如content为空）。
     """
     content = msg.get('content')
 
-    # content 是纯字符串
     if isinstance(content, str) and content.strip():
         msg['content'] = [{"type": "text", "text": content, "cache_control": shared.make_cache_control()}]
         return True
 
-    # content 是 block 数组（多模态消息）
     if isinstance(content, list):
-        # 从后往前找最后一个 text block
         for i in range(len(content) - 1, -1, -1):
             block = content[i]
             if isinstance(block, dict) and block.get("type") == "text" and block.get("text", "").strip():
@@ -369,15 +352,6 @@ async def build_partitioned_messages(
 ) -> list:
     """
     分区缓存模式：构建带breakpoint的messages数组。
-
-    结构：
-    system: [{人设, BP1}]                        ← 永远命中
-    messages:
-      [摘要blocks（每段一个block）, 最后BP]       ← 尾部追加，前面命中
-      [摘要assistant]
-      [A区消息... 最后一条BP2]                    ← 正常轮次不变
-      [B区消息... 最后一条BP3]                    ← lookback命中
-      [当前user: 时间+记忆+消息]                  ← 不缓存
     """
     X = shared.CACHE_PARTITION_X
 
@@ -388,8 +362,7 @@ async def build_partitioned_messages(
     if history and history[-1].get('role') == 'user':
         current_user_msg = history.pop()
 
-    # 清洗孤立的tool消息（前面不是 assistant(tool_calls) 或另一条 tool 的）
-    # 防止DB里的重复tool消息导致消息乱序
+    # 清洗孤立的tool消息
     cleaned = []
     orphan_count = 0
     for msg in history:
@@ -406,7 +379,6 @@ async def build_partitioned_messages(
         print(f"⚠️ 清理了 {orphan_count} 条孤立tool消息")
     history = cleaned
 
-    # 按逻辑轮分组（解决tool消息导致的轮计数错乱）
     rounds = group_by_rounds(history)
     total_rounds = len(rounds)
 
@@ -425,7 +397,6 @@ async def build_partitioned_messages(
             memory_text_builder,
         )
 
-    # 计算A/B区（按逻辑轮切片）
     a_end_round = a_start_round + X
     a_round_groups = rounds[a_start_round : a_end_round]
     b_round_groups = rounds[a_end_round :]
@@ -444,8 +415,6 @@ async def build_partitioned_messages(
         if new_summary:
             summary_parts.append(new_summary)
         elif shared.CACHE_SUMMARY_MODEL:
-            # 配置了摘要模型但生成失败（网络/空content等）：中止本次轮转不推进滑窗，
-            # A区消息保留在上下文里，下次请求重试。只有纯轮转模式（模型留空）才无摘要直接滑出。
             rotation_count -= 1
             print(f"⚠️ 摘要生成失败，本次轮转中止，下次请求重试（A区消息未丢失）")
             break
@@ -463,7 +432,6 @@ async def build_partitioned_messages(
         summary_total = sum(len(p) for p in summary_parts)
         print(f"🔄 轮转完成(共{rotation_count}次): 摘要{len(summary_parts)}段/{summary_total}字, A区{len(a_msgs)}条, B区{len(b_msgs)}条")
 
-    # 拼装messages
     result = []
     if base_prompt:
         result.append({
@@ -471,7 +439,6 @@ async def build_partitioned_messages(
             "content": [{"type": "text", "text": base_prompt, "cache_control": shared.make_cache_control()}]
         })
 
-    # 摘要区（多block，尾部追加模式）
     if summary_parts:
         blocks = [{"type": "text", "text": "[以下是之前对话的摘要，帮助你回忆上下文]"}]
         for i, part in enumerate(summary_parts):
@@ -482,7 +449,6 @@ async def build_partitioned_messages(
         result.append({"role": "user", "content": blocks})
         result.append({"role": "assistant", "content": "好的，我已了解之前的对话内容。"})
 
-    # A区：剥离tool消息和tool_calls，只保留有文本的user/assistant（节省上下文）
     cleaned_a = []
     for msg in a_msgs:
         if msg.get('role') == 'tool':
@@ -492,7 +458,6 @@ async def build_partitioned_messages(
             continue
         cleaned_a.append(m)
 
-    # A区：从末尾往前找第一条非tool消息打BP
     for j in range(len(cleaned_a) - 1, -1, -1):
         if cleaned_a[j].get('role') != 'tool' and _apply_breakpoint(cleaned_a[j]):
             break
@@ -500,7 +465,6 @@ async def build_partitioned_messages(
     for m in cleaned_a:
         result.append(m)
 
-    # B区：先构建去掉created_at的副本，再从末尾往前打BP
     b_cleaned = [{k: v for k, v in msg.items() if k not in ('created_at',)} for msg in b_msgs]
 
     for j in range(len(b_cleaned) - 1, -1, -1):
@@ -553,8 +517,6 @@ async def _build_basic_cached(
             "content": [{"type": "text", "text": base_prompt, "cache_control": shared.make_cache_control()}]
         })
 
-    # 新建/继承的对话线在历史不足 X 轮时也必须读到继承摘要。
-    # 否则 dashboard 和 DB 都显示摘要存在，但首轮请求不会注入。
     if summary_parts:
         blocks = [{"type": "text", "text": "[以下是之前对话的摘要，帮助你回忆上下文]"}]
         for i, part in enumerate(summary_parts):
@@ -567,7 +529,6 @@ async def _build_basic_cached(
 
     h_cleaned = [{k: v for k, v in msg.items() if k not in ('created_at',)} for msg in history]
 
-    # 从末尾往前找第一条非tool消息打BP
     for j in range(len(h_cleaned) - 1, -1, -1):
         if h_cleaned[j].get('role') != 'tool' and _apply_breakpoint(h_cleaned[j]):
             break
