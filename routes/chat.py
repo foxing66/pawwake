@@ -333,7 +333,9 @@ async def _chat_completions_inner(request: Request):
 
     print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
 
-    # ---------- 清理 messages 中的额外字段（DeepSeek 不接受 tool_calls/tool_call_id/content_type） ----------
+    # ---------- 清理 messages 中的额外字段 ----------
+    # 保留 DeepSeek 需要的 tool_calls / tool_call_id / content 数组结构，
+    # 只删掉它明确不接受的 content_type 和空 tool_call_id。
     def clean_messages(messages):
         cleaned = []
         for msg in messages:
@@ -342,6 +344,12 @@ async def _chat_completions_inner(request: Request):
                 cleaned_msg["role"] = msg["role"]
             if "content" in msg:
                 cleaned_msg["content"] = msg["content"]
+            # 保留 assistant 的 tool_calls（DeepSeek 需要，用于工具调用闭环）
+            if "tool_calls" in msg and msg["tool_calls"]:
+                cleaned_msg["tool_calls"] = msg["tool_calls"]
+            # 保留 tool 的 tool_call_id（DeepSeek 需要，用于匹配工具结果）
+            if "tool_call_id" in msg and msg["tool_call_id"]:
+                cleaned_msg["tool_call_id"] = msg["tool_call_id"]
             cleaned.append(cleaned_msg)
         return cleaned
 
@@ -376,7 +384,7 @@ async def _chat_completions_inner(request: Request):
         )
     else:
         async with httpx.AsyncClient(timeout=300) as client:
-            # ---------- 最终清理：发送前再过滤一次，确保没有额外字段 ----------
+            # ---------- 最终清理：发送前再过滤一次 ----------
             if "messages" in body:
                 cleaned = []
                 for msg in body["messages"]:
@@ -385,6 +393,10 @@ async def _chat_completions_inner(request: Request):
                         cleaned_msg["role"] = msg["role"]
                     if "content" in msg:
                         cleaned_msg["content"] = msg["content"]
+                    if "tool_calls" in msg and msg["tool_calls"]:
+                        cleaned_msg["tool_calls"] = msg["tool_calls"]
+                    if "tool_call_id" in msg and msg["tool_call_id"]:
+                        cleaned_msg["tool_call_id"] = msg["tool_call_id"]
                     cleaned.append(cleaned_msg)
                 body["messages"] = cleaned
                 print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
