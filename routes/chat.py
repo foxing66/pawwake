@@ -78,9 +78,14 @@ async def _process_memory_markers(assistant_msg: str, session_id: str):
     """从回复中提取 [[save_memory: 内容]] 标记并写入记忆库。"""
     if not assistant_msg:
         return
+    found = _MEMORY_MARKER_PATTERN.findall(assistant_msg)
+    if found:
+        print(f"🏷️ [标记法] 检测到 {len(found)} 个标记: {[c[:30] for c in found]}")
     if not (shared.MEMORY_ENABLED and shared.DATABASE_ENABLED):
+        if found:
+            print("⚠️ [标记法] 跳过写入：memory/database 未开启")
         return
-    for content in _MEMORY_MARKER_PATTERN.findall(assistant_msg):
+    for content in found:
         content = content.strip()
         if not content:
             continue
