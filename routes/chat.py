@@ -3,6 +3,7 @@
 import asyncio
 import json
 import logging
+import re
 import uuid
 
 import httpx
@@ -66,6 +67,35 @@ async def list_models():
     }
 
 
+# ============================================================
+# [[save_memory: 内容]] 标记解析
+# ============================================================
+
+_MEMORY_MARKER_PATTERN = re.compile(r"\[\[save_memory:\s*(.+?)\]\]", re.DOTALL)
+
+
+async def _process_memory_markers(assistant_msg: str, session_id: str):
+    """从回复中提取 [[save_memory: 内容]] 标记并写入记忆库。"""
+    if not assistant_msg:
+        return
+    if not (shared.MEMORY_ENABLED and shared.DATABASE_ENABLED):
+        return
+    for content in _MEMORY_MARKER_PATTERN.findall(assistant_msg):
+        content = content.strip()
+        if not content:
+            continue
+        try:
+            await db_memories.save_memory(
+                content=content,
+                importance=7,
+                source_session=session_id,
+                layer=1,
+            )
+            print(f"💾 [标记法] 已保存记忆: {content[:50]}")
+        except Exception as e:
+            print(f"⚠️ [标记法] 保存失败: {e}")
+
+
 @router.post("/v1/chat/completions")
 async def chat_completions(request: Request):
     """核心转发接口"""
@@ -92,7 +122,6 @@ async def _chat_completions_inner(request: Request):
     pending_memory_ids = []
 
     # ---------- 检测是否应跳过对话存储 ----------
-    # 优先尊重客户端显式声明；无法加 header 的客户端则识别其标题生成模板。
     explicit_skip = request.headers.get("X-Skip-Conversation-Log", "").lower() == "true"
     auxiliary_title_request = partition_engine._is_title_generation_request(messages)
     skip_conversation_log = explicit_skip or auxiliary_title_request
@@ -114,7 +143,6 @@ async def _chat_completions_inner(request: Request):
             break
 
     # ---------- 构建 system prompt ----------
-    # 先保存原始对话消息（不含 system prompt），用于记忆提取
     original_messages = [msg for msg in messages if msg.get("role") != "system"]
     extraction_context_messages = original_messages
     extraction_round_count = None
@@ -134,13 +162,12 @@ async def _chat_completions_inner(request: Request):
         if active_sid:
             session_id = active_sid
 
-        # 从DB读取历史
         try:
             db_history = await db_conversations.get_conversation_messages(session_id, limit=10000)
             db_msgs = []
             for m in (db_history or []):
                 msg = db_conversations.db_row_to_message(m)
-                msg['created_at'] = m.get('created_at')  # 保留时间戳供分区时间窗口判断
+                msg['created_at'] = m.get('created_at')
                 db_msgs.append(msg)
         except Exception as e:
             print(f"❌ 分区缓存不可用：读取对话历史失败: {e}")
@@ -154,14 +181,8 @@ async def _chat_completions_inner(request: Request):
                 },
             )
 
-        # 提取客户端新消息（非system），可能是user、tool、或带tool_calls的assistant
         client_new_msgs = [m for m in messages if m.get("role") != "system"]
-        # 分区模式下，assistant消息来自上一轮response（DB里已存），过滤掉避免重复
         client_new_msgs = [m for m in client_new_msgs if m.get("role") != "assistant"]
-        # 分区模式下DB已有完整历史，客户端发来的旧user是冗余的。
-        # 但有些客户端把图片和文字拆成多条连续的user发送（图在前文字在后），
-        # 只留最后一条会把图那条当冗余丢掉（图片不入库，DB里也找不回来）。
-        # 所以按原始消息顺序保留"末尾连续的user块"：历史冗余user总是被assistant隔开，不会混入。
         tail_user_ids = set()
         for m in reversed([m for m in messages if m.get("role") != "system"]):
             if m.get("role") == "user":
@@ -175,20 +196,16 @@ async def _chat_completions_inner(request: Request):
                 if m.get("role") != "user" or id(m) in tail_user_ids
             ]
             print(f"🔧 去重: 过滤{len(user_msgs)-len(tail_user_ids)}条冗余user，保留末尾连续{len(tail_user_ids)}条")
-        # 工具结果轮次处理：基于DB状态 + 当前轮次tool_call_id精确判断
         client_tools = [m for m in client_new_msgs if m.get("role") == "tool"]
         if client_tools:
-            # 判断DB是否处于"等待tool结果"状态（最后一条是assistant(tool_calls)）
             db_last = db_msgs[-1] if db_msgs else None
             db_expecting_tool = (db_last and db_last.get("role") == "assistant" and db_last.get("tool_calls"))
 
             if not db_expecting_tool:
-                # DB不在等待tool结果 → 客户端的所有tool都是历史残留（含手动删除后的幽灵）
                 stale_ids = [m.get('tool_call_id', '?') for m in client_tools]
                 print(f"🔧 去重: DB未在等待tool结果，丢弃{len(client_tools)}条客户端tool (ids: {stale_ids})")
                 client_new_msgs = [m for m in client_new_msgs if m.get("role") != "tool"]
             else:
-                # DB在等待tool → 只保留匹配当前轮次assistant(tool_calls)的tool
                 expected_tool_ids = {tc.get("id") for tc in db_last.get("tool_calls", []) if tc.get("id")}
                 new_tools = [m for m in client_tools if m.get("tool_call_id") in expected_tool_ids]
                 stale_tools = [m for m in client_tools if m.get("tool_call_id") not in expected_tool_ids]
@@ -198,13 +215,10 @@ async def _chat_completions_inner(request: Request):
                 if new_tools:
                     print(f"🔧 保留{len(new_tools)}条当前轮次tool (ids: {[m.get('tool_call_id','?') for m in new_tools]})")
 
-                # 重建 client_new_msgs（user此时已只剩末尾连续块，全部保回，别把拆条发送的图丢了）
                 tail_users = [m for m in client_new_msgs if m.get("role") == "user"]
                 client_new_msgs = new_tools[:] + tail_users
 
                 if new_tools:
-                    # Race condition 防护：DB的assistant(tool_calls)已确认存在（db_expecting_tool=True），
-                    # 但仍需检查是否被其他并发请求意外清除
                     new_tool_ids = {m.get("tool_call_id") for m in new_tools if m.get("tool_call_id")}
                     db_has_matching_ast = False
                     for m in db_msgs:
@@ -225,7 +239,6 @@ async def _chat_completions_inner(request: Request):
         extraction_context_messages = all_msgs
         extraction_round_count = len(partition_engine.group_by_rounds(all_msgs))
 
-        # 同步更新tool_messages，避免process_memories_background存重复的旧tool
         tool_messages = [m for m in client_new_msgs if m.get("role") == "tool"]
 
         print(f"📦 分区模式: DB历史{len(db_msgs)}条 + 客户端消息{len(client_new_msgs)}条")
@@ -233,8 +246,6 @@ async def _chat_completions_inner(request: Request):
         partition_prompt = resolved_system_prompt
         if shared.MEMORY_ENABLED and shared.MAX_MEMORIES_INJECT > 0:
             partition_prompt = (resolved_system_prompt or "") + partition_engine.MEMORY_USAGE_GUIDE
-        # 保留客户端自带的 system（工具说明等），拼接到网关 prompt 之后，
-        # 与非分区路径的行为对齐（前端 system 稳定时不影响 BP1 缓存命中）
         client_system_text = partition_engine._extract_client_system_text(messages)
         if client_system_text:
             partition_prompt = ((partition_prompt or "") + "\n\n" + client_system_text).strip()
@@ -272,7 +283,6 @@ async def _chat_completions_inner(request: Request):
         body["messages"] = messages
 
     else:
-        # ---------- 原有逻辑：system prompt + 记忆注入 ----------
         if not skip_conversation_log and (resolved_system_prompt or (shared.MEMORY_ENABLED and user_message)):
             if shared.MEMORY_ENABLED and user_message:
                 enhanced_prompt = await memory_pipeline.build_system_prompt_with_memories(
@@ -309,23 +319,18 @@ async def _chat_completions_inner(request: Request):
         "Authorization": f"Bearer {shared.API_KEY}",
         "Content-Type": "application/json",
     }
-    # OpenRouter 需要的额外头
     if "openrouter" in shared.API_BASE_URL:
         headers["HTTP-Referer"] = shared.EXTRA_REFERER
         headers["X-Title"] = shared.EXTRA_TITLE
 
     is_stream = body.get("stream", False)
 
-    # 强制流式传输（解决部分客户端不发stream=true的问题）
     if shared.FORCE_STREAM and not is_stream:
         is_stream = True
         body["stream"] = True
         print(f"⚡ 强制开启流式传输（FORCE_STREAM=true）")
 
-    # 注入推理参数（解决客户端走网关时不带reasoning参数的问题）
     if shared.REASONING_EFFORT and not skip_conversation_log:
-        # 统一用 reasoning_effort（Claude/OpenAI/Google Gemini OpenAI兼容端点都支持）
-        # 先删除客户端可能已带的值，确保用我们配置的
         body.pop("reasoning_effort", None)
         body.pop("google", None)
         body["reasoning_effort"] = shared.REASONING_EFFORT
@@ -333,9 +338,6 @@ async def _chat_completions_inner(request: Request):
 
     print(f"📡 请求: model={model}, stream={is_stream}, memory={'on' if shared.MEMORY_ENABLED else 'off'}", flush=True)
 
-    # ---------- 清理 messages 中的额外字段 ----------
-    # 保留 DeepSeek 需要的 tool_calls / tool_call_id / content 数组结构，
-    # 只删掉它明确不接受的 content_type 和空 tool_call_id。
     def clean_messages(messages):
         cleaned = []
         for msg in messages:
@@ -344,10 +346,8 @@ async def _chat_completions_inner(request: Request):
                 cleaned_msg["role"] = msg["role"]
             if "content" in msg:
                 cleaned_msg["content"] = msg["content"]
-            # 保留 assistant 的 tool_calls（DeepSeek 需要，用于工具调用闭环）
             if "tool_calls" in msg and msg["tool_calls"]:
                 cleaned_msg["tool_calls"] = msg["tool_calls"]
-            # 保留 tool 的 tool_call_id（DeepSeek 需要，用于匹配工具结果）
             if "tool_call_id" in msg and msg["tool_call_id"]:
                 cleaned_msg["tool_call_id"] = msg["tool_call_id"]
             cleaned.append(cleaned_msg)
@@ -357,9 +357,7 @@ async def _chat_completions_inner(request: Request):
         original_len = len(body["messages"])
         body["messages"] = clean_messages(body["messages"])
         print(f"🧹 清理了 messages 中的额外字段 (共 {original_len} 条)", flush=True)
-    # ---------- 清理结束 ----------
 
-    # 调试：打印请求体中的推理相关字段
     debug_keys = {k: v for k, v in body.items() if k in ('reasoning_effort', 'google', 'reasoning')}
     if debug_keys:
         print(f"📡 推理字段: {debug_keys}", flush=True)
@@ -384,7 +382,6 @@ async def _chat_completions_inner(request: Request):
         )
     else:
         async with httpx.AsyncClient(timeout=300) as client:
-            # ---------- 最终清理：发送前再过滤一次 ----------
             if "messages" in body:
                 cleaned = []
                 for msg in body["messages"]:
@@ -400,13 +397,10 @@ async def _chat_completions_inner(request: Request):
                     cleaned.append(cleaned_msg)
                 body["messages"] = cleaned
                 print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
-            # ---------- 最终清理结束 ----------
 
-            # ---------- 调试：打印图片消息 ----------
             for m in body.get("messages", []):
                 if isinstance(m.get("content"), list):
                     print(f"🖼️ 图片消息: {json.dumps(m['content'], ensure_ascii=False)[:2000]}", flush=True)
-            # ---------- 调试结束 ----------
 
             print(f"🔗 实际请求 URL: {shared.API_BASE_URL}", flush=True)
             response = await client.post(shared.API_BASE_URL + "/chat/completions", headers=headers, json=body)
@@ -427,6 +421,10 @@ async def _chat_completions_inner(request: Request):
                         print(f"🧠 Response 包含 reasoning_content ({len(assistant_reasoning)}字符)")
                 except (KeyError, IndexError):
                     pass
+
+                # ---------- 解析 [[save_memory: 内容]] 标记 ----------
+                await _process_memory_markers(assistant_msg, session_id)
+                # ---------- 标记解析结束 ----------
 
                 if pending_fragment_ids:
                     try:
@@ -485,16 +483,14 @@ async def stream_and_capture(
     full_reasoning = []
     stream_usage = {}
     line_buffer = ""
-    accumulated_tool_calls = {}  # index -> OpenAI-compatible tool call
+    accumulated_tool_calls = {}
     stream_succeeded = False
 
     async with httpx.AsyncClient(timeout=300) as client:
         async with client.stream("POST", shared.API_BASE_URL + "/chat/completions", headers=headers, json=body) as response:
-            # 打印上游响应头（排查thinking问题用）
             upstream_ct = response.headers.get("content-type", "")
             print(f"📨 上游响应: status={response.status_code}, content-type={upstream_ct}", flush=True)
 
-            # 上游非200时，提前打印messages结构方便debug
             if response.status_code != 200:
                 msg_summary = [{"role": m.get("role"), "tool_calls": bool(m.get("tool_calls")), "tool_call_id": m.get("tool_call_id", ""), "content_type": type(m.get("content")).__name__} for m in body.get("messages", [])]
                 print(f"❌ 发送的messages结构({len(msg_summary)}条): {msg_summary}", flush=True)
@@ -503,14 +499,12 @@ async def stream_and_capture(
             is_error = response.status_code != 200
 
             async for chunk in response.aiter_bytes():
-                # 原始字节直接透传给客户端
                 yield chunk
 
                 if is_error:
                     error_body_parts.append(chunk)
                     continue
 
-                # 旁路解析：从字节流中提取assistant回复内容，用于后续记忆提取
                 text = chunk.decode("utf-8", errors="ignore")
                 line_buffer += text
                 while "\n" in line_buffer:
@@ -528,12 +522,10 @@ async def stream_and_capture(
                             if content:
                                 full_response.append(content)
 
-                            # 收集reasoning_content（deepseek thinking mode）
                             reasoning = delta.get("reasoning_content", "")
                             if reasoning:
                                 full_reasoning.append(reasoning)
 
-                            # 累积tool_calls
                             if "tool_calls" in delta:
                                 for tc in delta["tool_calls"]:
                                     idx = tc.get("index", 0)
@@ -566,10 +558,13 @@ async def stream_and_capture(
     assistant_reasoning = "".join(full_reasoning) if full_reasoning else None
     assistant_tool_calls = list(accumulated_tool_calls.values()) if accumulated_tool_calls else None
 
+    # ---------- 解析 [[save_memory: 内容]] 标记 ----------
+    await _process_memory_markers(assistant_msg, session_id)
+    # ---------- 标记解析结束 ----------
+
     if assistant_reasoning:
         print(f"🧠 Stream response 包含 reasoning_content ({len(assistant_reasoning)}字符)")
 
-    # 打印上游错误内容
     if error_body_parts:
         error_text = b"".join(error_body_parts).decode("utf-8", errors="ignore")[:500]
         print(f"❌ 上游错误内容: {error_text}", flush=True)
