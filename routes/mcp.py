@@ -26,4 +26,4 @@ def save_memory(content: str) -> str:
         return f"保存异常: {e}"
 
 
-mcp_app = mcp.http_app(transport="streamable-http")
+mcp_app = mcp.streamable_http_app()
