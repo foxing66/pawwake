@@ -26,4 +26,4 @@ def save_memory(content: str) -> str:
         return f"保存异常: {e}"
 
 
-mcp_app = mcp.http_app()
+mcp_app = mcp.http_app(path="/")
