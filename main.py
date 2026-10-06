@@ -157,7 +157,14 @@ async def lifespan(app: FastAPI):
 
 
 
-app = FastAPI(title="Pawwake", version="4.1.1", lifespan=lifespan)
+@asynccontextmanager
+async def combined_lifespan(app):
+    async with lifespan(app):
+        async with mcp_app.lifespan(app):
+            yield
+
+
+app = FastAPI(title="Pawwake", version="4.1.1", lifespan=combined_lifespan)
 app.mount("/static", StaticFiles(directory="static"), name="static")
 app.middleware("http")(auth.gateway_auth_middleware)
 
