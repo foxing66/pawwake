@@ -8,7 +8,7 @@ import shared
 mcp = FastMCP("Pawwake Memory")
 
 
-@mcp.tool
+@mcp.tool()
 def save_memory(content: str) -> str:
     """保存一条长期记忆"""
     base = f"http://localhost:{shared.PORT}"
