@@ -32,6 +32,7 @@ from routes.memories import maintenance_router as memories_maintenance_router
 from routes.memories import router as memories_router
 from routes.conversations import router as conversations_router
 from routes.partition import router as partition_router
+from routes.mcp import mcp_app
 
 # ============================================================
 # 应用生命周期管理
@@ -170,6 +171,7 @@ app.include_router(conversations_router, dependencies=database_dependencies)
 app.include_router(partition_router, dependencies=database_dependencies)
 app.include_router(memories_maintenance_router, dependencies=database_dependencies)
 app.include_router(settings_router)
+app.mount("/mcp", mcp_app)
 
 # ============================================================
 
