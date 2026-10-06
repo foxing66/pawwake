@@ -5,3 +5,4 @@ asyncpg==0.30.0
 jieba==0.42.1
 jinja2==3.1.4
 fastmcp==2.14.3
+packaging
