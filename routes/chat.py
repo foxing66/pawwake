@@ -203,27 +203,54 @@ async def _chat_completions_inner(request: Request):
             print(f"🔧 去重: 过滤{len(user_msgs)-len(tail_user_ids)}条冗余user，保留末尾连续{len(tail_user_ids)}条")
         client_tools = [m for m in client_new_msgs if m.get("role") == "tool"]
         if client_tools:
-            # 收集 DB 里所有"已发出但还没配对 tool 结果"的 tool_call_id
+            # 收集 DB 里所有"已发出但还没配对 tool 结果"的 tool_call_id（保持顺序）
             answered_ids = {
                 m.get("tool_call_id")
                 for m in db_msgs
                 if m.get("role") == "tool" and m.get("tool_call_id")
             }
-            pending_ids = set()
+            pending_list = []
             for m in db_msgs:
                 if m.get("role") == "assistant" and m.get("tool_calls"):
                     for tc in m["tool_calls"]:
                         tc_id = tc.get("id")
                         if tc_id and tc_id not in answered_ids:
-                            pending_ids.add(tc_id)
+                            pending_list.append(tc_id)
+
+            # ---- 第一步：严格匹配优先 ----
+            matched_tools = []
+            unmatched_tools = []
+            for m in client_tools:
+                tc_id = m.get("tool_call_id")
+                if tc_id and tc_id in pending_list:
+                    matched_tools.append(m)
+                else:
+                    unmatched_tools.append(m)
+
+            if matched_tools:
+                print(f"🔧 严格匹配: 保留{len(matched_tools)}条tool (ids: {[m.get('tool_call_id') for m in matched_tools]})")
+
+            # ---- 第二步：未匹配的按顺序从剩余 pending 里补 ----
+            used_ids = {m.get("tool_call_id") for m in matched_tools}
+            remaining_pending = [tc for tc in pending_list if tc not in used_ids]
+            ri = 0
+            for m in unmatched_tools:
+                if ri < len(remaining_pending):
+                    old_id = m.get("tool_call_id", "")
+                    m["tool_call_id"] = remaining_pending[ri]
+                    print(f"🔧 顺序补全: {old_id or '(空)'} → {remaining_pending[ri]}")
+                    ri += 1
+                    matched_tools.append(m)
+                else:
+                    print(f"⚠️ 无法配对，丢弃 tool (原id: {m.get('tool_call_id', '(空)')})")
+
+            pending_ids = set(pending_list)
 
             if not pending_ids:
-                # DB 里确实没有任何"等结果"的 tool_calls，客户端 tool 是残留
                 stale_ids = [m.get('tool_call_id', '?') for m in client_tools]
                 print(f"🔧 去重: DB无待配对tool_calls，丢弃{len(client_tools)}条客户端tool (ids: {stale_ids})")
                 client_new_msgs = [m for m in client_new_msgs if m.get("role") != "tool"]
             else:
-                # 只保留能配上 DB pending tool_call_id 的 tool 消息
                 new_tools = [m for m in client_tools if m.get("tool_call_id") in pending_ids]
                 stale_tools = [m for m in client_tools if m.get("tool_call_id") not in pending_ids]
 
