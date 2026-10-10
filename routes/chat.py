@@ -203,22 +203,34 @@ async def _chat_completions_inner(request: Request):
             print(f"🔧 去重: 过滤{len(user_msgs)-len(tail_user_ids)}条冗余user，保留末尾连续{len(tail_user_ids)}条")
         client_tools = [m for m in client_new_msgs if m.get("role") == "tool"]
         if client_tools:
-            db_last = db_msgs[-1] if db_msgs else None
-            db_expecting_tool = (db_last and db_last.get("role") == "assistant" and db_last.get("tool_calls"))
+            # 收集 DB 里所有"已发出但还没配对 tool 结果"的 tool_call_id
+            answered_ids = {
+                m.get("tool_call_id")
+                for m in db_msgs
+                if m.get("role") == "tool" and m.get("tool_call_id")
+            }
+            pending_ids = set()
+            for m in db_msgs:
+                if m.get("role") == "assistant" and m.get("tool_calls"):
+                    for tc in m["tool_calls"]:
+                        tc_id = tc.get("id")
+                        if tc_id and tc_id not in answered_ids:
+                            pending_ids.add(tc_id)
 
-            if not db_expecting_tool:
+            if not pending_ids:
+                # DB 里确实没有任何"等结果"的 tool_calls，客户端 tool 是残留
                 stale_ids = [m.get('tool_call_id', '?') for m in client_tools]
-                print(f"🔧 去重: DB未在等待tool结果，丢弃{len(client_tools)}条客户端tool (ids: {stale_ids})")
+                print(f"🔧 去重: DB无待配对tool_calls，丢弃{len(client_tools)}条客户端tool (ids: {stale_ids})")
                 client_new_msgs = [m for m in client_new_msgs if m.get("role") != "tool"]
             else:
-                expected_tool_ids = {tc.get("id") for tc in db_last.get("tool_calls", []) if tc.get("id")}
-                new_tools = [m for m in client_tools if m.get("tool_call_id") in expected_tool_ids]
-                stale_tools = [m for m in client_tools if m.get("tool_call_id") not in expected_tool_ids]
+                # 只保留能配上 DB pending tool_call_id 的 tool 消息
+                new_tools = [m for m in client_tools if m.get("tool_call_id") in pending_ids]
+                stale_tools = [m for m in client_tools if m.get("tool_call_id") not in pending_ids]
 
                 if stale_tools:
                     print(f"🔧 去重: 丢弃{len(stale_tools)}条非当前轮次tool (ids: {[m.get('tool_call_id','?') for m in stale_tools]})")
                 if new_tools:
-                    print(f"🔧 保留{len(new_tools)}条当前轮次tool (ids: {[m.get('tool_call_id','?') for m in new_tools]})")
+                    print(f"🔧 保留{len(new_tools)}条待配对tool (ids: {[m.get('tool_call_id','?') for m in new_tools]})")
 
                 tail_users = [m for m in client_new_msgs if m.get("role") == "user"]
                 client_new_msgs = new_tools[:] + tail_users
