@@ -233,20 +233,6 @@ async def _chat_completions_inner(request: Request):
             if matched_tools:
                 print(f"🔧 严格匹配: 保留{len(matched_tools)}条tool (ids: {[m.get('tool_call_id') for m in matched_tools]})")
 
-            # ---- 第二步：未匹配的按顺序从剩余 pending 里补 ----
-            used_ids = {m.get("tool_call_id") for m in matched_tools}
-            remaining_pending = [tc for tc in pending_list if tc not in used_ids]
-            ri = 0
-            for m in unmatched_tools:
-                if ri < len(remaining_pending):
-                    old_id = m.get("tool_call_id", "")
-                    m["tool_call_id"] = remaining_pending[ri]
-                    print(f"🔧 顺序补全: {old_id or '(空)'} → {remaining_pending[ri]}")
-                    ri += 1
-                    matched_tools.append(m)
-                else:
-                    print(f"⚠️ 无法配对，丢弃 tool (原id: {m.get('tool_call_id', '(空)')})")
-
             pending_ids = set(pending_list)
 
             if not pending_ids:
