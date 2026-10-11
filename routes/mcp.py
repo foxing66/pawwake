@@ -12,6 +12,8 @@ mcp = FastMCP("Pawwake Memory")
 def save_memory(content: str) -> str:
     """保存一条长期记忆"""
     base = f"http://localhost:{shared.PORT}"
+    print(f"💾 [MCP save_memory] 被调用，content={content[:50]}")
+    print(f"💾 [MCP save_memory] 请求 URL: {base}/api/memories")
     try:
         resp = httpx.post(
             f"{base}/api/memories",
@@ -19,11 +21,12 @@ def save_memory(content: str) -> str:
             headers={"X-Gateway-Key": shared.GATEWAY_SECRET or ""},
             timeout=30,
         )
+        print(f"💾 [MCP save_memory] 响应 status={resp.status_code}, body={resp.text[:200]}")
         if resp.status_code == 200:
             return "已保存"
         return f"保存失败: {resp.text}"
     except Exception as e:
+        print(f"⚠️ [MCP save_memory] 异常: {e}")
         return f"保存异常: {e}"
-
 
 mcp_app = mcp.http_app(path="/")
