@@ -217,6 +217,9 @@ async def _chat_completions_inner(request: Request):
                         if tc_id and tc_id not in answered_ids:
                             pending_list.append(tc_id)
 
+            # 新增日志：打印两边 ID 列表
+            print(f"🔍 [工具配对] DB pending IDs: {pending_list}")
+            print(f"🔍 [工具配对] 客户端回传 IDs: {[m.get('tool_call_id', '(空)') for m in client_tools]}")
             # ---- 第一步：严格匹配优先 ----
             matched_tools = []
             unmatched_tools = []
