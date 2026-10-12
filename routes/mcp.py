@@ -1,7 +1,10 @@
 """MCP server exposing Pawwake memory tools."""
 
 import httpx
+import os
 from fastmcp import FastMCP
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse
 
 import shared
 
@@ -29,7 +32,9 @@ def save_memory(content: str) -> str:
         print(f"⚠️ [MCP save_memory] 异常: {e}")
         return f"保存异常: {e}"
 
+
 mcp_app = mcp.http_app(path="/")
+
 # ---------- MCP token 校验 ----------
 MCP_TOKEN = os.environ.get("MCP_TOKEN", "")
 
