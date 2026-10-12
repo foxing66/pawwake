@@ -7,27 +7,24 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from starlette.responses import JSONResponse
 
 import shared
+from db import memories as db_memories
 
 mcp = FastMCP("Pawwake Memory")
 
 
 @mcp.tool()
-def save_memory(content: str) -> str:
+async def save_memory(content: str) -> str:
     """保存一条长期记忆"""
-    base = f"http://localhost:{shared.PORT}"
     print(f"💾 [MCP save_memory] 被调用，content={content[:50]}")
-    print(f"💾 [MCP save_memory] 请求 URL: {base}/api/memories")
     try:
-        resp = httpx.post(
-            f"{base}/api/memories",
-            json={"content": content, "importance": 7},
-            headers={"X-Gateway-Key": shared.GATEWAY_SECRET or ""},
-            timeout=30,
+        memory_id = await db_memories.save_memory(
+            content=content,
+            importance=7,
+            source_session="mcp",
+            layer=1,
         )
-        print(f"💾 [MCP save_memory] 响应 status={resp.status_code}, body={resp.text[:200]}")
-        if resp.status_code == 200:
-            return "已保存"
-        return f"保存失败: {resp.text}"
+        print(f"💾 [MCP save_memory] 保存成功，id={memory_id}")
+        return "已保存"
     except Exception as e:
         print(f"⚠️ [MCP save_memory] 异常: {e}")
         return f"保存异常: {e}"
