@@ -383,6 +383,8 @@ async def _chat_completions_inner(request: Request):
                 cleaned_msg["tool_calls"] = msg["tool_calls"]
             if "tool_call_id" in msg and msg["tool_call_id"]:
                 cleaned_msg["tool_call_id"] = msg["tool_call_id"]
+            if "reasoning_content" in msg and msg["reasoning_content"]:
+                cleaned_msg["reasoning_content"] = msg["reasoning_content"]
             cleaned.append(cleaned_msg)
         return cleaned
 
@@ -427,10 +429,11 @@ async def _chat_completions_inner(request: Request):
                         cleaned_msg["tool_calls"] = msg["tool_calls"]
                     if "tool_call_id" in msg and msg["tool_call_id"]:
                         cleaned_msg["tool_call_id"] = msg["tool_call_id"]
+                    if "reasoning_content" in msg and msg["reasoning_content"]:
+                        cleaned_msg["reasoning_content"] = msg["reasoning_content"]
                     cleaned.append(cleaned_msg)
                 body["messages"] = cleaned
                 print(f"🧹 最终清理: 发送前再次过滤了 messages (共 {len(cleaned)} 条)", flush=True)
-
             for m in body.get("messages", []):
                 if isinstance(m.get("content"), list):
                     print(f"🖼️ 图片消息: {json.dumps(m['content'], ensure_ascii=False)[:2000]}", flush=True)
