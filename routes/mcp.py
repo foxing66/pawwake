@@ -28,6 +28,21 @@ async def save_memory(content: str) -> str:
     except Exception as e:
         print(f"⚠️ [MCP save_memory] 异常: {e}")
         return f"保存异常: {e}"
+@mcp.tool()
+async def memory_search(query: str, limit: int = 10) -> str:
+    """搜索相关记忆，返回匹配的条目和 id。"""
+    print(f"🔍 [MCP memory_search] query={query[:50]}, limit={limit}")
+    try:
+        results = await db_memories.search_memories(query, limit=limit)
+        if not results:
+            return "没有找到相关记忆。"
+        lines = []
+        for r in results:
+            lines.append(f"id={r['id']} | 重要度={r.get('importance', '?')} | {r['content']}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"⚠️ [MCP memory_search] 异常: {e}")
+        return f"搜索异常: {e}"
 
 
 mcp_app = mcp.http_app(path="/")
