@@ -43,7 +43,30 @@ async def memory_search(query: str, limit: int = 10) -> str:
     except Exception as e:
         print(f"⚠️ [MCP memory_search] 异常: {e}")
         return f"搜索异常: {e}"
+@mcp.tool()
+async def memory_update(memory_id: int, content: str) -> str:
+    """修改指定 id 的记忆内容。"""
+    print(f"✏️ [MCP memory_update] id={memory_id}, content={content[:50]}")
+    try:
+        await db_memories.update_memory_with_layer(memory_id, content=content)
+        print(f"✏️ [MCP memory_update] 修改成功，id={memory_id}")
+        return f"已修改 id={memory_id}"
+    except Exception as e:
+        print(f"⚠️ [MCP memory_update] 异常: {e}")
+        return f"修改异常: {e}"
 
+
+@mcp.tool()
+async def memory_delete(memory_id: int) -> str:
+    """归档指定 id 的记忆。"""
+    print(f"🗑️ [MCP memory_delete] id={memory_id}")
+    try:
+        await db_memories.soft_delete_memories_batch([memory_id])
+        print(f"🗑️ [MCP memory_delete] 归档成功，id={memory_id}")
+        return f"已归档 id={memory_id}"
+    except Exception as e:
+        print(f"⚠️ [MCP memory_delete] 异常: {e}")
+        return f"归档异常: {e}"
 
 mcp_app = mcp.http_app(path="/")
 
