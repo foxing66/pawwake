@@ -67,7 +67,21 @@ async def memory_delete(memory_id: int) -> str:
     except Exception as e:
         print(f"⚠️ [MCP memory_delete] 异常: {e}")
         return f"归档异常: {e}"
-
+@mcp.tool()
+async def memory_list(limit: int = 20) -> str:
+    """列出最近的记忆，返回 id 和内容摘要。"""
+    print(f"📋 [MCP memory_list] limit={limit}")
+    try:
+        rows = await db_memories.get_recent_memories(limit=limit)
+        if not rows:
+            return "没有记忆。"
+        lines = []
+        for r in rows:
+            lines.append(f"id={r['id']} | 重要度={r.get('importance', '?')} | {r['content'][:80]}")
+        return "\n".join(lines)
+    except Exception as e:
+        print(f"⚠️ [MCP memory_list] 异常: {e}")
+        return f"列出异常: {e}"
 mcp_app = mcp.http_app(path="/")
 
 # ---------- MCP token 校验 ----------
