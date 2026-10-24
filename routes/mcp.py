@@ -13,23 +13,25 @@ mcp = FastMCP("Pawwake Memory")
 
 
 @mcp.tool()
-async def save_memory(content: str, importance: int = 5) -> str:
+async def pw_save(content: str, importance: int = 5) -> str:
     """保存一条长期记忆。importance 是重要程度，1-10。"""
-    print(f"💾 [MCP save_memory] content={content[:30]}, importance={importance}")
+    print(f"💾 [MCP pw_save] content={content[:30]}, importance={importance}")
     try:
         memory_id = await db_memories.save_memory(
             content=content,
-            importance=importance,  # 这里改成传入的变量
+            importance=importance,
             source_session="mcp",
             layer=1,
         )
         return f"已保存，id={memory_id}，权重={importance}"
     except Exception as e:
         return f"保存异常: {e}"
+
+
 @mcp.tool()
-async def memory_search(query: str, limit: int = 10) -> str:
+async def pw_search(query: str, limit: int = 10) -> str:
     """搜索相关记忆，返回匹配的条目和 id。"""
-    print(f"🔍 [MCP memory_search] query={query[:50]}, limit={limit}")
+    print(f"🔍 [MCP pw_search] query={query[:50]}, limit={limit}")
     try:
         results = await db_memories.search_memories(query, limit=limit)
         if not results:
@@ -39,36 +41,13 @@ async def memory_search(query: str, limit: int = 10) -> str:
             lines.append(f"id={r['id']} | 重要度={r.get('importance', '?')} | {r['content']}")
         return "\n".join(lines)
     except Exception as e:
-        print(f"⚠️ [MCP memory_search] 异常: {e}")
         return f"搜索异常: {e}"
-@mcp.tool()
-async def memory_update(memory_id: int, content: str) -> str:
-    """修改指定 id 的记忆内容。"""
-    print(f"✏️ [MCP memory_update] id={memory_id}, content={content[:50]}")
-    try:
-        await db_memories.update_memory_with_layer(memory_id, content=content)
-        print(f"✏️ [MCP memory_update] 修改成功，id={memory_id}")
-        return f"已修改 id={memory_id}"
-    except Exception as e:
-        print(f"⚠️ [MCP memory_update] 异常: {e}")
-        return f"修改异常: {e}"
 
 
 @mcp.tool()
-async def memory_delete(memory_id: int) -> str:
-    """归档指定 id 的记忆。"""
-    print(f"🗑️ [MCP memory_delete] id={memory_id}")
-    try:
-        await db_memories.soft_delete_memories_batch([memory_id])
-        print(f"🗑️ [MCP memory_delete] 归档成功，id={memory_id}")
-        return f"已归档 id={memory_id}"
-    except Exception as e:
-        print(f"⚠️ [MCP memory_delete] 异常: {e}")
-        return f"归档异常: {e}"
-@mcp.tool()
-async def memory_list(limit: int = 20) -> str:
+async def pw_list(limit: int = 20) -> str:
     """列出最近的记忆，返回 id 和内容摘要。"""
-    print(f"📋 [MCP memory_list] limit={limit}")
+    print(f"📋 [MCP pw_list] limit={limit}")
     try:
         rows = await db_memories.get_recent_memories(limit=limit)
         if not rows:
@@ -78,8 +57,29 @@ async def memory_list(limit: int = 20) -> str:
             lines.append(f"id={r['id']} | 重要度={r.get('importance', '?')} | {r['content'][:80]}")
         return "\n".join(lines)
     except Exception as e:
-        print(f"⚠️ [MCP memory_list] 异常: {e}")
         return f"列出异常: {e}"
+
+
+@mcp.tool()
+async def pw_update(memory_id: int, content: str) -> str:
+    """修改指定 id 的记忆内容。"""
+    print(f"✏️ [MCP pw_update] id={memory_id}, content={content[:50]}")
+    try:
+        await db_memories.update_memory_with_layer(memory_id, content=content)
+        return f"已修改 id={memory_id}"
+    except Exception as e:
+        return f"修改异常: {e}"
+
+
+@mcp.tool()
+async def pw_archive(memory_id: int) -> str:
+    """归档指定 id 的记忆。"""
+    print(f"🗑️ [MCP pw_archive] id={memory_id}")
+    try:
+        await db_memories.soft_delete_memories_batch([memory_id])
+        return f"已归档 id={memory_id}"
+    except Exception as e:
+        return f"归档异常: {e}"
 mcp_app = mcp.http_app(path="/")
 
 # ---------- MCP token 校验 ----------
