@@ -13,20 +13,18 @@ mcp = FastMCP("Pawwake Memory")
 
 
 @mcp.tool()
-async def save_memory(content: str) -> str:
-    """保存一条长期记忆"""
-    print(f"💾 [MCP save_memory] 被调用，content={content[:50]}")
+async def save_memory(content: str, importance: int = 5) -> str:
+    """保存一条长期记忆。importance 是重要程度，1-10。"""
+    print(f"💾 [MCP save_memory] content={content[:30]}, importance={importance}")
     try:
         memory_id = await db_memories.save_memory(
             content=content,
-            importance=7,
+            importance=importance,  # 这里改成传入的变量
             source_session="mcp",
             layer=1,
         )
-        print(f"💾 [MCP save_memory] 保存成功，id={memory_id}")
-        return "已保存"
+        return f"已保存，id={memory_id}，权重={importance}"
     except Exception as e:
-        print(f"⚠️ [MCP save_memory] 异常: {e}")
         return f"保存异常: {e}"
 @mcp.tool()
 async def memory_search(query: str, limit: int = 10) -> str:
