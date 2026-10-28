@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 
 import shared
 from db import memories as db_memories
-from db import conversations as db_conversations
+
 mcp = FastMCP("Pawwake Memory")
 
 
@@ -83,29 +83,40 @@ async def pw_archive(memory_id: int) -> str:
 
 @mcp.tool()
 async def pw_chat_search(query: str, limit: int = 5) -> str:
-    """在历史聊天原话中搜索关键词，返回包含该关键词的对话片段。"""
+    """在历史聊天原话中全局搜索关键词，返回包含该关键词的对话片段。"""
     print(f"🔍 [MCP pw_chat_search] query={query[:30]}, limit={limit}")
     try:
-        # 获取当前活跃的对话线 session_id
-        session_id = shared.get_active_session_id() or "jiangshengyiyu"
+        # 直接调用底层数据库池
+        from db import core as db_core
+        pool = await db_core.get_pool()
         
-        # 从网关数据库拉取这条线最近 200 条消息（防止全库扫描爆内存）
-        msgs = await db_conversations.get_conversation_messages(session_id, limit=200)
+        # 用 SQL 的 ILIKE 进行全库模糊匹配（忽略大小写，包含就算）
+        sql = """
+            SELECT role, content, created_at 
+            FROM conversations 
+            WHERE content ILIKE $1 
+            ORDER BY created_at DESC 
+            LIMIT $2
+        """
+        
+        async with pool.acquire() as conn:
+            # 在前后加 % 实现模糊搜索
+            search_pattern = f"%{query}%"
+            rows = await conn.fetch(sql, search_pattern, limit)
+            
+        if not rows:
+            return f"在全库中未找到关于「{query}」的原话记录。"
         
         results = []
-        # 逆序遍历，优先搜最新的
-        for m in reversed(msgs):
-            content = m.get("content", "")
-            if isinstance(content, str) and query in content:
-                role = "阿艺" if m.get("role") == "user" else "江予"
-                results.append(f"[{role}]: {content[:200]}") # 截取前200字防爆
-                if len(results) >= limit:
-                    break
-        
-        if not results:
-            return f"没有在当前对话线（{session_id}）的原话中找到关于「{query}」的内容。"
-        
+        for r in rows:
+            role = "阿艺" if r["role"] == "user" else "江予"
+            time_str = r["created_at"].strftime("%m-%d %H:%M")
+            # 截取上下文，前后各保留一部分
+            text = r["content"]
+            results.append(f"[{time_str} {role}]: {text[:300]}")
+            
         return "找到以下原话记录：\n" + "\n---\n".join(results)
+        
     except Exception as e:
         print(f"⚠️ [MCP pw_chat_search] 异常: {e}")
         return f"搜索异常: {e}"
