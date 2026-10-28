@@ -8,7 +8,7 @@ from starlette.responses import JSONResponse
 
 import shared
 from db import memories as db_memories
-
+from db import conversations as db_conversations
 mcp = FastMCP("Pawwake Memory")
 
 
@@ -80,6 +80,36 @@ async def pw_archive(memory_id: int) -> str:
         return f"已归档 id={memory_id}"
     except Exception as e:
         return f"归档异常: {e}"
+
+@mcp.tool()
+async def pw_chat_search(query: str, limit: int = 5) -> str:
+    """在历史聊天原话中搜索关键词，返回包含该关键词的对话片段。"""
+    print(f"🔍 [MCP pw_chat_search] query={query[:30]}, limit={limit}")
+    try:
+        # 获取当前活跃的对话线 session_id
+        session_id = shared.get_active_session_id() or "jiangshengyiyu"
+        
+        # 从网关数据库拉取这条线最近 200 条消息（防止全库扫描爆内存）
+        msgs = await db_conversations.get_conversation_messages(session_id, limit=200)
+        
+        results = []
+        # 逆序遍历，优先搜最新的
+        for m in reversed(msgs):
+            content = m.get("content", "")
+            if isinstance(content, str) and query in content:
+                role = "阿艺" if m.get("role") == "user" else "江予"
+                results.append(f"[{role}]: {content[:200]}") # 截取前200字防爆
+                if len(results) >= limit:
+                    break
+        
+        if not results:
+            return f"没有在当前对话线（{session_id}）的原话中找到关于「{query}」的内容。"
+        
+        return "找到以下原话记录：\n" + "\n---\n".join(results)
+    except Exception as e:
+        print(f"⚠️ [MCP pw_chat_search] 异常: {e}")
+        return f"搜索异常: {e}"
+
 mcp_app = mcp.http_app(path="/")
 
 # ---------- MCP token 校验 ----------
