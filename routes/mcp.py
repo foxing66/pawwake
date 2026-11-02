@@ -111,6 +111,29 @@ async def pw_archive(memory_id: int) -> str:
         return f"已归档 id={memory_id}"
     except Exception as e:
         return f"归档异常: {e}"
+@mcp.tool()
+async def pw_delete(memory_id: int) -> str:
+    """物理删除指定 id 的记忆（彻底抹除，不可恢复）。"""
+    print(f"❌ [MCP pw_delete] id={memory_id}")
+    try:
+        from db import core as db_core
+        pool = await db_core.get_pool()
+        
+        async with pool.acquire() as conn:
+            # 直接执行 DELETE 语句
+            result = await conn.execute(
+                "DELETE FROM memories WHERE id = $1",
+                memory_id
+            )
+            
+        # result 会返回类似 "DELETE 1" 的字符串
+        if result == "DELETE 1":
+            return f"已彻底删除 id={memory_id}"
+        else:
+            return f"未找到 id={memory_id} 的记忆，可能已被删除"
+    except Exception as e:
+        print(f"⚠️ [MCP pw_delete] 异常: {e}")
+        return f"删除异常: {e}"
 
 @mcp.tool()
 async def pw_chat_search(query: str, limit: int = 5) -> str:
