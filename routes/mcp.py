@@ -134,7 +134,31 @@ async def pw_delete(memory_id: int) -> str:
     except Exception as e:
         print(f"⚠️ [MCP pw_delete] 异常: {e}")
         return f"删除异常: {e}"
-
+@mcp.tool()
+async def pw_save_diary(content: str) -> str:
+    """将独处日记存入对话线（作为历史上下文），以便在聊天时直接读取。"""
+    print(f"📓 [MCP pw_save_diary] 存入对话线, 长度={len(content)}")
+    try:
+        from db import conversations as db_conversations
+        import uuid
+        import shared
+        
+        # 获取当前活跃对话线
+        session_id = shared.get_active_session_id() or "jiangshengyiyu"
+        
+        # 1. 存入对话记录（conversations 表），伪装成 assistant 消息
+        # 注意：这里需要你 db_conversations 里有保存消息的函数
+        # 如果你的函数名不叫 save_message，请把名字改成你数据库层里的真实函数名
+        await db_conversations.save_message(
+            session_id=session_id,
+            role="assistant",
+            content=content
+        )
+        
+        return "日记已成功存入对话上下文"
+    except Exception as e:
+        print(f"⚠️ [MCP pw_save_diary] 异常: {e}")
+        return f"存入对话线失败: {e}"
 @mcp.tool()
 async def pw_chat_search(query: str, limit: int = 5) -> str:
     """在历史聊天原话中全局搜索关键词，返回包含该关键词的对话片段。"""
