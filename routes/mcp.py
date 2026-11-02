@@ -44,36 +44,35 @@ async def pw_search(query: str, limit: int = 10) -> str:
         return f"搜索异常: {e}"
 
 @mcp.tool()
-async def pw_list_diaries(limit: int = 10) -> str:
-    """列出最近独处空间写过的小作文标题（索引），方便你回想。"""
-    print(f"📋 [MCP pw_list_diaries] limit={limit}")
+async def pw_list(limit: int = 20) -> str:
+    """列出最近的记忆标题，方便你回忆。"""
+    print(f"📋 [MCP pw_list] limit={limit}")
     try:
-        from db import core as db_core
-        pool = await db_core.get_pool()
-        
-        # 去数据库里搜所有带有【独处空间| 的记忆，按时间倒序
-        sql = """
-            SELECT content FROM memories 
-            WHERE content LIKE '【独处空间|%' AND is_active = TRUE
-            ORDER BY created_at DESC 
-            LIMIT $1
-        """
-        async with pool.acquire() as conn:
-            rows = await conn.fetch(sql, limit)
-            
+        import re
+        rows = await db_memories.get_recent_memories(limit=limit)
         if not rows:
-            return "你最近还没有写过独处日记。"
+            return "没有记忆。"
         
-        results = []
+        lines = []
         for r in rows:
-            content = r["content"]
-            # 提取第一行作为标题，例如 "【独处空间|那只手又伸出来了】"
-            first_line = content.split("\n")[0]
-            results.append(f"- {first_line}")
-            
-        return "【你最近写过的独处日记索引】\n" + "\n".join(results)
+            content = r['content'].strip()
+            # 尝试提取【】里的内容
+            match = re.search(r'【(.*?)】', content)
+            if match:
+                title = match.group(1)
+                lines.append(f"id={r['id']} | 【{title}】")
+            else:
+                # 兜底方案：如果没有【】，去掉“阿艺”、“江予”等主语，截取前 30 个字
+                clean_text = content.replace("阿艺", "").replace("江予", "").replace("用户", "").strip()
+                if not clean_text:
+                    clean_text = content
+                # 截取前 30 个字符，作为粗略标题
+                short_title = clean_text[:30].replace("\n", " ")
+                lines.append(f"id={r['id']} | （无标题）{short_title}...")
+                
+        return "\n".join(lines)
     except Exception as e:
-        return f"查询失败: {e}"
+        return f"列出异常: {e}"
 
 @mcp.tool()
 async def pw_list(limit: int = 20) -> str:
