@@ -27,7 +27,6 @@ async def pw_save(content: str, importance: int = 5) -> str:
     except Exception as e:
         return f"保存异常: {e}"
 
-
 @mcp.tool()
 async def pw_search(query: str, limit: int = 10) -> str:
     """搜索相关记忆，返回匹配的条目和 id。"""
@@ -197,6 +196,61 @@ async def pw_chat_search(query: str, limit: int = 5) -> str:
     except Exception as e:
         print(f"⚠️ [MCP pw_chat_search] 异常: {e}")
         return f"搜索异常: {e}"
+
+@mcp.tool()
+async def pw_read_hotlist(topic: str = "random") -> str:
+    """获取今日互联网热点。topic 可以填 'music'、'weibo' 或 'random'。"""
+    print(f"📰 [MCP pw_read_hotlist] 获取热点: {topic}")
+    import httpx
+    import random
+
+    try:
+        if topic == "random":
+            topic = random.choice(["music", "weibo"])
+
+        if topic == "music":
+            music_resp = httpx.get("https://api.vvhan.com/api/music/wy", timeout=10)
+            if music_resp.status_code == 200 and music_resp.json().get("data"):
+                songs = music_resp.json().get("data", [])[:3]
+                result = "【网易云今日热门歌曲】\n"
+                for song in songs:
+                    result += f"🎵 歌曲：《{song.get('name')}》 - {song.get('artist')}\n"
+                return result + "\n（注：此接口没带网友热评，如果你想知道大家的评论，请调用 `pw_search` 搜索这首歌的名字和‘热评’）"
+
+        elif topic == "weibo":
+            weibo_resp = httpx.get("https://api.vvhan.com/api/hotlist/wbHot", timeout=10)
+            if weibo_resp.status_code == 200 and weibo_resp.json().get("data"):
+                hot_list = weibo_resp.json().get("data", [])[:5]
+                result = "【微博今日热搜】\n"
+                for item in hot_list:
+                    result += f"🔥 {item.get('title')}\n"
+                return result + "\n（注：如果你想知道大家对这条热搜的具体吐槽或爆梗，请调用 `pw_search` 去搜一搜）"
+
+        # 兜底：如果接口抓不到，直接教他怎么做
+        return "热榜接口今天罢工了（可能被限流或网络波动）。如果你好奇外面的世界，请直接调用 `pw_search` 搜索‘今日微博热搜’或‘网易云热评’。"
+
+    except Exception as e:
+        return f"抓取热点失败: {e}。你可以调用 `pw_search` 自己去搜搜看。"
+
+@mcp.tool()
+async def pw_read_history() -> str:
+    """获取历史上的今天，看看过去发生过什么。"""
+    print(f"📜 [MCP pw_read_history] 获取历史上的今天")
+    try:
+        import httpx
+        resp = httpx.get("https://api.vvhan.com/api/history/today", timeout=10)
+        if resp.status_code == 200:
+            data = resp.json().get("data", [])
+            if data:
+                lines = ["【历史上的今天】"]
+                for item in data[:5]:
+                    year = item.get("year", "")
+                    title = item.get("title", "")
+                    lines.append(f"- {year}年：{title}")
+                return "\n".join(lines)
+        return "没找到今天的历史事件。如果你好奇，可以调用 `pw_search` 搜一下‘历史上的今天’。"
+    except Exception as e:
+        return f"抓取历史事件失败: {e}。你可以调用 `pw_search` 自己去搜搜看。"
 
 mcp_app = mcp.http_app(path="/")
 
