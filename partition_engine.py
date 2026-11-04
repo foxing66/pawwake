@@ -176,8 +176,9 @@ async def generate_summary(messages: list, session_id: str = "") -> str:
         content = msg['content'] if isinstance(msg['content'], str) else str(msg['content'])
         conversation_text += f"{role_label}: {content}\n\n"
 
-    prompt = f"""请将以下对话压缩成摘要。这份摘要会作为AI的记忆注入后续对话，请以AI的第一人称视角叙述（"我"指AI，用户用对话中的称呼）。
+    prompt = f"""请将以下对话压缩成摘要。这份摘要会作为AI的记忆注入后续对话，请以AI的第一人称视角叙述（"我"指AI，严禁直接使用“用户”指代用户，用户用对话中的称呼，）。
 优先保留：情感节点、关系里程碑、双方的约定和决定、正在进行的话题。
+【时间格式要求】：如果对话中涉及时间，请将绝对时间戳（如 2026-10-28T08:00:00）或日期，转换成自然语言表达。例如写成“10月28日早上”、“10月30日晚上”、“昨晚”或“今天下午”。严禁直接输出冰冷的长串数字代码格式。
 保留双方的关键原话，用引号标注是谁说的。
 去掉日常寒暄和重复内容。控制在300字以内。
 
