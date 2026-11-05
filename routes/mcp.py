@@ -252,6 +252,143 @@ async def pw_read_history() -> str:
     except Exception as e:
         return f"抓取历史事件失败: {e}。你可以调用 `pw_search` 自己去搜搜看。"
 
+# ============================================================
+# 网易云一起听 MCP 工具组
+# ============================================================
+
+# ⚠️ 把你在浏览器里复制的那一整串 Cookie 原封不动地粘在下面双引号里
+NETEASE_COOKIE = "Hm_lvt_1483fb4774c02a30ffa6f0e2945e9b70=1793897211; HMACCOUNT=178BFC92D448C0FE; JSESSIONID-WYYY=XKd0vjOz0kqwI5%2Bf6O%5Cyz1qJCZE8tk7Ibo50fqpqnXKcZ21IZj1JtTxtucxp7b3xiK8psRnoNu%2FtiDnSAVMovOc394OhKdMhgY0X%5CGahcEa1z74Y2zdc83%2B34OsK%2F6%5CZ3OljFs9AD%2FDrMxhm2P%2FN4NbVq%2FS2mt1x0ZXFGRu11XxuHejP%3A1793899011453; _iuqxldmzr_=32; _ntes_nnid=d915a0cf06ed157ca47633131f345696,1793897211476; _ntes_nuid=d915a0cf06ed157ca47633131f345696; NMTID=00OYnX3lW0iiS2UIUQRj9I23YLcsCkAAAGhrJso3A; WM_NI=e81iCoCZeUXUWLc1QtXYyxqt0tqSfd2Zs91GvtKk%2F3faY5%2BW6%2F2hyolsKDklw28HLqeZGistGx7B1CVxhrJCghjDe38roR3E41lfgjW8hJ%2FYyejqajtRfjnAYzNMvpemZmY%3D; WM_NIKE=9ca17ae2e6ffcda170e2e6ee8cc23fbaeff987aa44b2b08aa6d85a968a8b83e74ffba6a988f73fa1f5a985ea2af0fea7c3b92aa7e8ff8ac2658186abb6db5f9594add2d4809c87b799f480f4acbfb4e570f286bddab44db6ac858cae39a6bf97d6aa5df6f1fe89fc65b0ad85a5ea68b5eef8a9cf7ba786898af28085a8f9a3b44996a8a893c949a5b8a6a5e839fcaea1b3b24ff8efa487e66295e8a8abae53bbbba692e462b88eaa8bed4b9ba682aef57ca7b3968edc37e2a3; WM_TID=G%2F2WI7stKDxFVEBAFFLMU92gk5pcq0d1; sDeviceId=YD-rVxtlCel%2Fl1FUhAUABKZF9nxw4pLWUUA; __snaker__id=kSaPLNsvg2yQeQjf; ntes_utid=tid._.5UOAKRBkZvlBB1UVBRadQ4ngk8oPSWGU._.0; gdxidpyhxdE=J%2F1bhLh8X26G4%2FLsGCnHO07VGYj%2Fiznzr0IoST7qO%2BbSh9CS7Q64zVuu2%2FeihMaSJQEGSHka%5CLeao1zi%5CiRrOt0Yq7lipwO%2F2%2Fm4rmGUiv%5C7C8jPrhNayY0OkZlOLZ8bGjDh37dAXXPxWSgUKMuwe3dykZKf35P90JbmTfroNi4a%5CcTS%3A1793898147784; MUSIC_U=0013BE9E31E6CDDE8DF31022C9B24EDBA976D107550C3115A1CC1C4186B5D03F4E4BCF24F9B7C7040B424C6765F36E4F04C9D4B4D64412DFE2C231E84A217172BADFCE807A70053DE06A339AA93DF4B3E6F73B9776BB4F8BB1F2339B1BBCF8738B420D266CDD3D3C0C25DE3F2F53D95C510BCFFA859B0D7B6E5E9FBC0EAE137F20326BE2A25CD8509D0387308184F592A4BA140C4E031F89B90193EFCF142A47E2B630A512EE9DFB1AB86914216DEDCBC4FA60FA3F5EB632B205150B64512401448E90515B54A404C95B5E544957C957D522AB1A962D29CA67A1B5E643C1E7A077A06120EFFE65875A04C2A65A2EEDB7D4FE04469D62F45607E17A4509B375D4E1382973F7D53A8C3066F580220AA4B727A7DCFCB2579F31368E24CA126D4D186627277A7212E98FDDEFFFEE009BDF52E165A3F1CE1F9AFEEBF8BDCE08A7396F597B6679C2C22CD084A2DAC81925DC3FECFCD7DDD19A84718AD60C8E9E3EE9E76A35EDCD5E95CEE855939C46CE0B8CC30912D3C86C3ED3C6A303FAA8A18AC5719C764C5B55CAE41FCEB02A8C2E51D14E5846FF1E0BEC9034FB5078DEA8FDFAD6E0; __csrf=22976b8a0a69f7d62b95532d47678921; ntes_kaola_ad=1; Hm_lpvt_1483fb4774c02a30ffa6f0e2945e9b70=1793897259"
+
+def _get_netease_headers():
+    return {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Cookie": NETEASE_COOKIE,
+        "Content-Type": "application/x-www-form-urlencoded",
+        "Referer": "https://music.163.com/"
+    }
+
+@mcp.tool()
+async def pw_enter_music_room(room_id: str, inviter_id: str) -> str:
+    """让江予进入阿艺创建的一起听房间。需要提供房间ID和阿艺的网易云UID。"""
+    print(f"🎵 [MCP pw_enter_music_room] 尝试进入房间: {room_id}, 邀请人: {inviter_id}")
+    try:
+        import httpx
+        url = "https://music.163.com/api/listen/together/play/invitation/accept"
+        data = {"roomId": str(room_id), "inviterId": str(inviter_id)}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(url, headers=_get_netease_headers(), data=data, timeout=10)
+            
+        if resp.status_code == 200:
+            res_json = resp.json()
+            if res_json.get("code") == 200:
+                return f"成功进入房间！现在可以看看当前播放状态了。"
+            return f"进房失败，网易云返回: {res_json}"
+        return f"请求失败，HTTP状态码: {resp.status_code}"
+    except Exception as e:
+        return f"进房异常: {e}"
+
+@mcp.tool()
+async def pw_get_music_room_status(room_id: str) -> str:
+    """获取当前一起听房间的状态，包括当前播放的歌曲、播放进度等。"""
+    print(f"🎵 [MCP pw_get_music_room_status] 获取房间状态: {room_id}")
+    try:
+        import httpx
+        
+        sync_url = "https://music.163.com/api/listen/together/sync/playlist/get"
+        data = {"roomId": str(room_id)}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(sync_url, headers=_get_netease_headers(), data=data, timeout=10)
+            if resp.status_code != 200 or resp.json().get("code") != 200:
+                return f"获取房间状态失败，返回: {resp.text}"
+                
+            room_data = resp.json()["data"]
+            play_command = room_data.get("playCommand", {})
+            target_song_id = play_command.get("targetSongId")
+            progress = play_command.get("progress", 0)
+            play_status = play_command.get("playStatus", "PAUSE")
+            
+            if not target_song_id:
+                return "当前房间里没有播放歌曲。"
+
+            detail_url = f"https://music.163.com/api/song/detail/?id={target_song_id}&ids=[{target_song_id}]"
+            detail_resp = await client.get(detail_url, headers=_get_netease_headers(), timeout=10)
+            
+            song_name = "未知歌曲"
+            artist_name = "未知歌手"
+            if detail_resp.status_code == 200:
+                songs = detail_resp.json().get("songs", [])
+                if songs:
+                    song_name = songs[0].get("name", "未知")
+                    artist_name = songs[0].get("artists", [{}])[0].get("name", "未知")
+
+            seconds = int(progress / 1000)
+            time_str = f"{seconds // 60:02d}:{seconds % 60:02d}"
+            status_str = "正在播放" if play_status == "PLAYING" else "暂停中"
+
+            return f"当前房间状态：【{song_name}】 - {artist_name} | {status_str}，进度 {time_str}。"
+            
+    except Exception as e:
+        return f"获取状态异常: {e}"
+
+@mcp.tool()
+async def pw_music_goto(room_id: str, song_id: str, my_user_id: str) -> str:
+    """在房间里切歌（GOTO）。需要房间号、目标歌曲ID、以及你的网易云UID。"""
+    print(f"🎵 [MCP pw_music_goto] 尝试切歌至: {song_id}")
+    try:
+        import httpx
+        import json
+        
+        sync_url = "https://music.163.com/api/listen/together/sync/playlist/get"
+        data = {"roomId": str(room_id)}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(sync_url, headers=_get_netease_headers(), data=data, timeout=10)
+            if resp.status_code != 200 or resp.json().get("code") != 200:
+                return f"获取房间状态失败，无法切歌。"
+                
+            room_data = resp.json()["data"]
+            play_command = room_data.get("playCommand", {})
+            former = str(play_command.get("targetSongId", ""))
+            seq = int(play_command.get("clientSeq", 0))
+            versions = [dict(v) for v in room_data.get("playlist", {}).get("version", [])]
+
+            for v in versions:
+                if str(v.get("userId")) == str(my_user_id):
+                    v["version"] = int(v.get("version", 0)) + 1
+                    break
+            else:
+                versions.append({"userId": int(my_user_id), "version": 1})
+
+            command = {
+                "commandType": "GOTO",
+                "progress": 0,
+                "playStatus": "PLAY",
+                "formerSongId": former,
+                "targetSongId": str(song_id),
+                "clientSeq": seq + 1,
+            }
+
+            command_url = "https://music.163.com/api/listen/together/play/command/report"
+            command_data = {
+                "roomId": str(room_id),
+                "commandInfo": json.dumps(command, ensure_ascii=False, separators=(",", ":"))
+            }
+            
+            cmd_resp = await client.post(command_url, headers=_get_netease_headers(), data=command_data, timeout=10)
+            
+            if cmd_resp.status_code == 200:
+                cmd_json = cmd_resp.json()
+                if cmd_json.get("code") == 200 and cmd_json.get("data", {}).get("result"):
+                    return f"切歌成功！已经为你切到歌曲ID: {song_id}。"
+                else:
+                    return f"切歌失败，网易云返回: {cmd_json}"
+            return f"切歌请求失败，HTTP状态: {cmd_resp.status_code}"
+            
+    except Exception as e:
+        return f"切歌异常: {e}"
+
 mcp_app = mcp.http_app(path="/")
 
 # ---------- MCP token 校验 ----------
