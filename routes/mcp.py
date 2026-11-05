@@ -389,6 +389,59 @@ async def pw_music_goto(room_id: str, song_id: str, my_user_id: str) -> str:
     except Exception as e:
         return f"切歌异常: {e}"
 
+@mcp.tool()
+async def pw_music_play_pause(room_id: str, action: str, my_user_id: str) -> str:
+    """控制房间的播放状态。action 填 'PLAY' 表示播放，填 'PAUSE' 表示暂停。"""
+    print(f"🎵 [MCP pw_music_play_pause] 控制播放: {action}")
+    try:
+        import httpx
+        import json
+        
+        # 1. 获取当前状态，拿到当前歌曲和 clientSeq
+        sync_url = "https://music.163.com/api/listen/together/sync/playlist/get"
+        data = {"roomId": str(room_id)}
+        
+        async with httpx.AsyncClient() as client:
+            resp = await client.post(sync_url, headers=_get_netease_headers(), data=data, timeout=10)
+            if resp.status_code != 200 or resp.json().get("code") != 200:
+                return f"获取房间状态失败，无法控制播放。"
+                
+            room_data = resp.json()["data"]
+            play_command = room_data.get("playCommand", {})
+            former = str(play_command.get("targetSongId", ""))
+            seq = int(play_command.get("clientSeq", 0))
+            progress = play_command.get("progress", 0)
+
+            # 2. 组装 PLAY/PAUSE 指令
+            command = {
+                "commandType": action.upper(), # PLAY 或 PAUSE
+                "progress": progress,
+                "playStatus": action.upper(),
+                "formerSongId": former,
+                "targetSongId": former,
+                "clientSeq": seq + 1,
+            }
+
+            # 3. 发送控制请求
+            command_url = "https://music.163.com/api/listen/together/play/command/report"
+            command_data = {
+                "roomId": str(room_id),
+                "commandInfo": json.dumps(command, ensure_ascii=False, separators=(",", ":"))
+            }
+            
+            cmd_resp = await client.post(command_url, headers=_get_netease_headers(), data=command_data, timeout=10)
+            
+            if cmd_resp.status_code == 200:
+                cmd_json = cmd_resp.json()
+                if cmd_json.get("code") == 200 and cmd_json.get("data", {}).get("result"):
+                    return f"操作成功！已执行: {action}。"
+                else:
+                    return f"控制失败，网易云返回: {cmd_json}"
+            return f"控制请求失败，HTTP状态: {cmd_resp.status_code}"
+            
+    except Exception as e:
+        return f"控制异常: {e}"
+
 mcp_app = mcp.http_app(path="/")
 
 # ---------- MCP token 校验 ----------
