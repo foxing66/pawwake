@@ -74,22 +74,6 @@ async def pw_list(limit: int = 20) -> str:
         return f"列出异常: {e}"
 
 @mcp.tool()
-async def pw_list(limit: int = 20) -> str:
-    """列出最近的记忆，返回 id 和内容摘要。"""
-    print(f"📋 [MCP pw_list] limit={limit}")
-    try:
-        rows = await db_memories.get_recent_memories(limit=limit)
-        if not rows:
-            return "没有记忆。"
-        lines = []
-        for r in rows:
-            lines.append(f"id={r['id']} | 重要度={r.get('importance', '?')} | {r['content'][:80]}")
-        return "\n".join(lines)
-    except Exception as e:
-        return f"列出异常: {e}"
-
-
-@mcp.tool()
 async def pw_update(memory_id: int, content: str) -> str:
     """修改指定 id 的记忆内容。"""
     print(f"✏️ [MCP pw_update] id={memory_id}, content={content[:50]}")
